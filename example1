@@ -1,0 +1,151 @@
+贝叶斯派和频率派：一个例子
+=====================================================
+（1）作为统计学的两大门派。贝叶斯派和频率派理念有别，方法也各异。但是撇开哲学层面的争论，从解决问题的角度来说，对于正确的问题采用正确的方法，才是运用之道。
+
+一个来自初等概率论的例子。
+
+在关于药物D的临床实验中，将背景相似，病情相似的500名患者分为治疗组（针对病情控制饮食，服用药物D）和控制组（相同饮食，服用安慰剂）。设饮食的控制可以使10%的病患恢复正常。而由于某种未知的隐藏因素F（比如基因），会影响药物D正常的发挥作用。设病患的90%为FA，药物D是不起作用的；而10%的病患为FB，其中95%可以通过药物D的治疗恢复正常。
+
+看看这个实验吧。
+```{r}
+n<-500
+diet<-0.1#通过控制饮食而恢复正常的
+effect<-c(0,0.95)
+names(effect)<-c('FA','FB')
+
+#对病患总体指派因素F
+f.chance<-runif(n)
+f<-ifelse(f.chance<0.9,'FA','FB')
+
+#指派控制组和治疗组
+group<-runif(n)
+group<-ifelse(group<0.5,'control','drug')
+
+#指派治疗结果
+diet.chance<-runif(n)
+drug.chance<-runif(n)
+outcome<-((diet.chance<diet)|(drug.chance<effect[f]*(group=='drug')))
+
+trail<-data.frame(group=group,F=f,treatment=outcome)
+
+#看看模拟的结果：
+
+summary(trail)
+```
+group F treatment
+control:251 FA:455 Mode :logical
+drug :249 FB: 45 FALSE:430
+TRUE :70
+NA's :0
+
+就是控制组251人，治疗组249人，因素FA455人，因素FB45人。 共治愈70人，其中FA44人，FB26人。
+
+分别看一下控制组和治疗组的情况：
+```{r}
+with(trail[group=='control',],table(F,treatment))
+with(trail[group=='drug',],table(F,treatment))
+```
+
+结果如下： 控制组： 
+treatment
+F FALSE TRUE 
+FA 208 21 
+FB 19 3 
+治疗组：
+treatment 
+F FALSE TRUE 
+FA 203 23 
+FB 0 23 
+#分组的治疗效果
+```{r}
+treat.group<-with(trail,table(group,treatment))
+```
+
+treatment 
+group FALSE TRUE 
+control 227 24 
+drug 203 46
+
+药物组的治愈率为18.47% 控制组的治愈率为9.56% 风险比（risk ratio）为：18.47/9.56=1.93 而比值比（odd ratio）为：（46/203）/(24/227)=2.14
+
+（2）频率派方法
+    检验这个结果是否显著的。 对列联表的独立性进行检验，原假设是疗效与病人是否服药独立，控制组和治疗组的治愈比例应该相等。 检验方法包括卡方检验或Fisher精确性检验。
+```{r}
+chisq.test(treat.group)
+```
+
+结果是显著的 Pearson's Chi-squared test with Yates' continuity correction
+
+data: treat.group X-squared = 7.5224, df = 1, p-value = 0.006094
+
+说明药物D的疗效和单纯的调节饮食有明显的差异。
+
+（3）贝叶斯派的方法
+
+如果医生面对的是一位的病人个体，那么这个病人服用药物D被治愈的概率适于使用贝叶斯观点，而非使用由总体抽样得出的结果（频率派）。
+
+按贝叶斯派的观点，治愈率p是一个随机变量。
+
+贝叶斯法则： Posterior(p | x) = C * Prior(p) * f(x | p)
+
+可以把某病人治愈的概率看作掷（非均匀的）硬币时出现正面的概率，即似然f(x | p)看作二项分布B（n,p），此时P的共轭先验分布为Beta（alpha,beta）分布（即后验分布是Beta(alpha+r,beta+n-r)分布）。
+
+贝叶斯方法中，经常采用分布的均值或者众数作为p的点估计。
+
+现在假设已知控制饮食得到的治愈率为10%，那么我们设置先验概率均值为 0.1（比如取alpha=0.1,beta=0.9）
+```{r ggplot,fig.width=4,fig.height=3}
+library(ggplot2)
+p<-ggplot(data.frame(x=c(0,1)),aes(x=x))
+p+stat_function(fun=dbeta,args=list(0.1,0.9),colour='red')
+```
+
+取这样一个分布的目的是使得p尽量在区间[0,1]上均匀。
+
+下面来计算后验概率。
+
+#利用公式计算Beta分布的均值和众数
+```{r}
+betad.mean<-function(alpha,beta)
+  {alpha/(alpha+beta)}
+betad.mode<-function(alpha,beta)
+  {(alpha+1)/(alpha+beta-2)}
+#先验分布的情况
+alpha<-0.1
+beta<-0.9
+#分控制组和治疗组分别讨论
+false.control<-treat.group[1,1]
+true.control<-treat.group[1,2]
+false.drug<-treat.group[2,1]
+true.drug<-treat.group[2,2]
+#对控制组，后验分布的参数
+alpha.control<-alpha+true.control
+beta.control<-beta+false.control
+#对治疗组，后验分布的参数
+alpha.drug<-alpha+true.drug
+beta.drug<-beta+false.drug
+```
+```{r ggplot,fig.width=4,fig.height=3}
+#画出这两个后验分布
+p<-ggplot(data.frame(x=c(0,.3)),aes(x=x))
+p+stat_function(fun=dbeta,args=list(alpha.drug,beta.drug),colour='red')+
+stat_function(fun=dbeta,args=list(alpha.control,beta.control),colour='blue')+
+  annotate("text",x=.03,y=20,label="control")+
+  annotate("text",x=.23,y=15,label="drug")
+```
+#计算控制组的均值和众数（p的后验估计）
+```{r}
+betad.mean(alpha.control,beta.control)
+# 0.1187755
+betad.mode(alpha.control,beta.control)
+#0.1238683
+```
+#计算治疗组的均值和众数(p的后验估计)
+```{r}
+betad.mean(alpha.drug,beta.drug)
+# 0.1754864
+betad.mode(alpha.drug,beta.drug)
+# 0.1807843
+```
+这些后验估计值就是在知道样本分布之后，对于先验信息治愈率10%的修正。
+
+这个例子的主要目的在于探讨贝叶斯派和频率派适用的具体情境
